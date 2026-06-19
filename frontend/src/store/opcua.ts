@@ -12,6 +12,13 @@ export const useOpcuaStore = defineStore('opcua', () => {
   const isConnected = ref(false)
   const dataHistory = ref<Map<string, Array<{ timestamp: number; value: number }>>>(new Map())
 
+  // 时间范围配置
+  type TimeRangeType = '15min' | '1hour' | 'custom'
+  const timeRangeType = ref<TimeRangeType>('15min')
+  const customStartTime = ref<number>(Date.now() - 3600 * 1000)
+  const customEndTime = ref<number>(Date.now())
+  const maxHistorySize = 7200
+
   // 初始化模拟节点树
   function initNodeTree() {
     nodeTree.value = [
@@ -156,7 +163,7 @@ export const useOpcuaStore = defineStore('opcua', () => {
       // 记录历史数据
       const history = dataHistory.value.get(node.id) || []
       history.push({ timestamp: Date.now(), value: typeof newValue === 'number' ? newValue : 0 })
-      if (history.length > 100) history.shift()
+      if (history.length > maxHistorySize) history.shift()
       dataHistory.value.set(node.id, history)
 
       // 检查报警条件
@@ -274,6 +281,46 @@ export const useOpcuaStore = defineStore('opcua', () => {
     isConnected.value = false
   }
 
+  // 时间范围方法
+  function setTimeRangeType(type: TimeRangeType) {
+    timeRangeType.value = type
+  }
+
+  function setCustomTimeRange(start: number, end: number) {
+    customStartTime.value = start
+    customEndTime.value = end
+  }
+
+  // 获取当前时间范围的起始时间
+  const currentTimeRangeStart = computed(() => {
+    const now = Date.now()
+    switch (timeRangeType.value) {
+      case '15min':
+        return now - 15 * 60 * 1000
+      case '1hour':
+        return now - 60 * 60 * 1000
+      case 'custom':
+        return customStartTime.value
+      default:
+        return now - 15 * 60 * 1000
+    }
+  })
+
+  const currentTimeRangeEnd = computed(() => {
+    if (timeRangeType.value === 'custom') {
+      return customEndTime.value
+    }
+    return Date.now()
+  })
+
+  // 根据时间范围获取过滤后的历史数据
+  function getFilteredHistory(nodeId: string): Array<{ timestamp: number; value: number }> {
+    const history = dataHistory.value.get(nodeId) || []
+    const start = currentTimeRangeStart.value
+    const end = currentTimeRangeEnd.value
+    return history.filter(h => h.timestamp >= start && h.timestamp <= end)
+  }
+
   // 计算属性
   const activeAlarmsCount = computed(() => alarms.value.filter(a => !a.acknowledged).length)
   const criticalAlarmsCount = computed(() => alarms.value.filter(a => a.severity === 'Critical' && !a.acknowledged).length)
@@ -287,6 +334,10 @@ export const useOpcuaStore = defineStore('opcua', () => {
     realTimeData,
     isConnected,
     dataHistory,
+    timeRangeType,
+    customStartTime,
+    customEndTime,
+    maxHistorySize,
     // 方法
     initNodeTree,
     simulateDataUpdate,
@@ -298,8 +349,13 @@ export const useOpcuaStore = defineStore('opcua', () => {
     connect,
     disconnect,
     getAllVariableNodes,
+    setTimeRangeType,
+    setCustomTimeRange,
+    getFilteredHistory,
     // 计算属性
     activeAlarmsCount,
-    criticalAlarmsCount
+    criticalAlarmsCount,
+    currentTimeRangeStart,
+    currentTimeRangeEnd
   }
 })

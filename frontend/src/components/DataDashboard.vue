@@ -113,7 +113,29 @@
 
     <!-- 趋势图区域 -->
     <div class="charts-section">
-      <h3 class="section-title">数据趋势</h3>
+      <div class="charts-header">
+        <h3 class="section-title">数据趋势</h3>
+        <div class="time-range-controls">
+          <el-radio-group v-model="timeRangeValue" size="small" @change="handleTimeRangeChange">
+            <el-radio-button label="15min">近15分钟</el-radio-button>
+            <el-radio-button label="1hour">近1小时</el-radio-button>
+            <el-radio-button label="custom">自定义</el-radio-button>
+          </el-radio-group>
+          <div v-if="timeRangeValue === 'custom'" class="custom-time-picker">
+            <el-date-picker
+              v-model="customDateRange"
+              type="datetimerange"
+              range-separator="至"
+              start-placeholder="开始时间"
+              end-placeholder="结束时间"
+              size="small"
+              value-format="x"
+              :shortcuts="dateShortcuts"
+              @change="handleCustomRangeChange"
+            />
+          </div>
+        </div>
+      </div>
       <div class="charts-grid">
         <div class="chart-card">
           <v-chart :option="tempChartOption" autoresize class="chart" />
@@ -130,7 +152,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
@@ -142,6 +164,50 @@ import { useOpcuaStore } from '../store/opcua'
 use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, TitleComponent])
 
 const store = useOpcuaStore()
+
+const timeRangeValue = ref<string>('15min')
+const customDateRange = ref<[number, number]>([Date.now() - 3600 * 1000, Date.now()])
+
+const dateShortcuts = [
+  {
+    text: '近15分钟',
+    value: () => {
+      const end = Date.now()
+      const start = end - 15 * 60 * 1000
+      return [start, end] as [number, number]
+    }
+  },
+  {
+    text: '近1小时',
+    value: () => {
+      const end = Date.now()
+      const start = end - 60 * 60 * 1000
+      return [start, end] as [number, number]
+    }
+  },
+  {
+    text: '近2小时',
+    value: () => {
+      const end = Date.now()
+      const start = end - 2 * 60 * 60 * 1000
+      return [start, end] as [number, number]
+    }
+  }
+]
+
+function handleTimeRangeChange(val: string) {
+  store.setTimeRangeType(val as '15min' | '1hour' | 'custom')
+}
+
+function handleCustomRangeChange(val: [number, number] | null) {
+  if (val && val.length === 2) {
+    store.setCustomTimeRange(val[0], val[1])
+  }
+}
+
+onMounted(() => {
+  timeRangeValue.value = store.timeRangeType
+})
 
 // 获取节点当前值
 function getNodeValue(nodeId: string): number | boolean {
@@ -224,16 +290,27 @@ function getSpeedColor(val: number) {
 
 // 构建趋势图
 function buildChartOption(title: string, nodeId: string, color: string, unit: string) {
-  const history = store.dataHistory.get(nodeId) || []
+  const history = store.getFilteredHistory(nodeId)
   const data = history.map(h => [h.timestamp, h.value])
+
+  const xAxisFormatter = store.timeRangeType === '1hour' || (store.timeRangeType === 'custom' && (store.currentTimeRangeEnd - store.currentTimeRangeStart) > 30 * 60 * 1000)
+    ? '{HH}:{mm}'
+    : '{HH}:{mm}:{ss}'
 
   return {
     title: { text: title, textStyle: { color: '#e0e0e0', fontSize: 14 }, left: 'center' },
-    tooltip: { trigger: 'axis' as const },
+    tooltip: {
+      trigger: 'axis' as const,
+      formatter: (params: any) => {
+        const date = new Date(params[0].value[0])
+        const timeStr = date.toLocaleString('zh-CN', { hour12: false })
+        return `${timeStr}<br/>${params[0].marker} ${params[0].value[1]} ${unit}`
+      }
+    },
     grid: { left: 60, right: 20, top: 40, bottom: 30 },
     xAxis: {
       type: 'time' as const,
-      axisLabel: { color: '#999', formatter: '{HH}:{mm}:{ss}' },
+      axisLabel: { color: '#999', formatter: xAxisFormatter },
       axisLine: { lineStyle: { color: '#444' } }
     },
     yAxis: {
@@ -341,6 +418,31 @@ const flowChartOption = computed(() => buildChartOption('流量趋势', 'flow_me
 
 .charts-section {
   margin-top: 16px;
+}
+
+.charts-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.charts-header .section-title {
+  margin-bottom: 0;
+}
+
+.time-range-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.custom-time-picker {
+  display: flex;
+  align-items: center;
 }
 
 .charts-grid {
