@@ -270,10 +270,38 @@ export const useOpcuaStore = defineStore('opcua', () => {
     alarms.value = []
   }
 
+  // 预生成历史数据（最多2小时，每秒一条）
+  function initHistoryData() {
+    const now = Date.now()
+    const nodes = getAllVariableNodes()
+    nodes.forEach(node => {
+      const history: Array<{ timestamp: number; value: number }> = []
+      const baseValue = typeof node.value === 'number' ? node.value : 0
+      for (let i = maxHistorySize; i >= 1; i--) {
+        const timestamp = now - i * 1000
+        let variation = 0
+        if (node.dataType === 'Double') {
+          variation = (Math.random() - 0.5) * 2
+        } else if (node.dataType === 'Int32') {
+          variation = Math.floor((Math.random() - 0.5) * 10)
+        }
+        let val = baseValue + variation
+        if (node.id === 'temp_sensor') val = Math.max(20, Math.min(35, val))
+        if (node.id === 'pressure_transmitter') val = Math.max(2, Math.min(5.5, val))
+        if (node.id === 'flow_meter') val = Math.max(100, Math.min(250, val))
+        if (node.id === 'valve_position') val = Math.max(30, Math.min(100, val))
+        if (node.id === 'motor_speed') val = Math.max(1300, Math.min(1700, val))
+        history.push({ timestamp, value: Math.round(val * 100) / 100 })
+      }
+      dataHistory.value.set(node.id, history)
+    })
+  }
+
   // 连接模拟
   function connect() {
     isConnected.value = true
     initNodeTree()
+    initHistoryData()
   }
 
   // 断开连接

@@ -152,7 +152,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
@@ -165,8 +165,8 @@ use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, TitleComponent]
 
 const store = useOpcuaStore()
 
-const timeRangeValue = ref<string>('15min')
-const customDateRange = ref<[number, number]>([Date.now() - 3600 * 1000, Date.now()])
+const timeRangeValue = ref<string>(store.timeRangeType)
+const customDateRange = ref<[number, number]>([store.customStartTime, store.customEndTime])
 
 const dateShortcuts = [
   {
@@ -197,16 +197,46 @@ const dateShortcuts = [
 
 function handleTimeRangeChange(val: string) {
   store.setTimeRangeType(val as '15min' | '1hour' | 'custom')
+  if (val === 'custom') {
+    if (!customDateRange.value || customDateRange.value.length !== 2) {
+      const end = Date.now()
+      const start = end - 60 * 60 * 1000
+      customDateRange.value = [start, end]
+      store.setCustomTimeRange(start, end)
+    } else {
+      store.setCustomTimeRange(customDateRange.value[0], customDateRange.value[1])
+    }
+  }
 }
 
 function handleCustomRangeChange(val: [number, number] | null) {
   if (val && val.length === 2) {
-    store.setCustomTimeRange(val[0], val[1])
+    const start = Number(val[0])
+    const end = Number(val[1])
+    if (start > 0 && end > 0 && end > start) {
+      store.setCustomTimeRange(start, end)
+    }
   }
 }
 
+watch(
+  () => store.timeRangeType,
+  (newVal) => {
+    timeRangeValue.value = newVal
+  }
+)
+
+watch(
+  () => [store.customStartTime, store.customEndTime],
+  ([start, end]) => {
+    customDateRange.value = [start, end]
+  },
+  { immediate: true }
+)
+
 onMounted(() => {
   timeRangeValue.value = store.timeRangeType
+  customDateRange.value = [store.customStartTime, store.customEndTime]
 })
 
 // 获取节点当前值
